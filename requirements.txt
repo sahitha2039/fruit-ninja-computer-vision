@@ -1,0 +1,12 @@
+# IRL Fruit Ninja — Python dependencies
+# Install with:  pip install -r requirements.txt
+
+pygame>=2.4.0
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+numpy>=1.24.0
+
+# Optional — enables emoji fruit rendering (highly recommended)
+# Without Pillow the game falls back to coloured circles.
+Pillow>=10.0.0
+mediapipe==0.10.14
