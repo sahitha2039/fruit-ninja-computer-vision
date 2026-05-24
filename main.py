@@ -52,8 +52,8 @@ from vision.swipe_detection import SwipeDetector
 
 WIN_W  = 1280
 WIN_H  = 720
-CAM_W  = 640
-CAM_H  = 480
+CAM_W  = 320
+CAM_H  = 240
 TARGET_FPS = 60
 
 # Game states

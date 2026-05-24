@@ -23,13 +23,14 @@ class HandTracker:
     def __init__(
         self,
         max_hands: int = 2,
-        detection_confidence: float = 0.6,
-        tracking_confidence: float = 0.5,
+        detection_confidence: float = 0.5,
+        tracking_confidence: float = 0.4,
     ):
         self._mp_hands = mp.solutions.hands
         self._hands = self._mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=max_hands,
+            model_complexity=0,
             min_detection_confidence=detection_confidence,
             min_tracking_confidence=tracking_confidence,
         )
