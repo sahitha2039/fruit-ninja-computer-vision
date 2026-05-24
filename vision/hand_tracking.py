@@ -22,7 +22,7 @@ class HandTracker:
 
     def __init__(
         self,
-        max_hands: int = 1,
+        max_hands: int = 2,
         detection_confidence: float = 0.6,
         tracking_confidence: float = 0.5,
     ):
@@ -62,6 +62,27 @@ class HandTracker:
         landmarks = self._last_result.multi_hand_landmarks[0].landmark
         lm = landmarks[self.INDEX_FINGER_TIP]
         return (lm.x * w, lm.y * h)
+
+    def get_all_fingertips(self, frame_rgb: np.ndarray) -> list:
+        """
+        Process *frame_rgb* and return a list of index-fingertip positions
+        for all detected hands (up to max_num_hands).  Each entry is
+        ``(x_px, y_px)``.  Returns an empty list when no hands are visible.
+        """
+        h, w = frame_rgb.shape[:2]
+        self.process(frame_rgb)
+
+        if not (
+            self._last_result
+            and self._last_result.multi_hand_landmarks
+        ):
+            return []
+
+        tips = []
+        for hand_landmarks in self._last_result.multi_hand_landmarks:
+            lm = hand_landmarks.landmark[self.INDEX_FINGER_TIP]
+            tips.append((lm.x * w, lm.y * h))
+        return tips
 
     def get_blade_points(self, frame_rgb: np.ndarray):
         """

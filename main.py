@@ -113,7 +113,7 @@ class FruitNinjaGame:
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
         self.screen = pygame.display.set_mode((WIN_W, WIN_H))
-        pygame.display.set_caption("🍉 IRL Fruit Ninja")
+        pygame.display.set_caption("Welcome to IRL Fruit Ninja")
         self.clock  = pygame.time.Clock()
 
         # --- Webcam ---
@@ -126,7 +126,9 @@ class FruitNinjaGame:
         # --- Vision ---
         self.hand_tracker = HandTracker()
         self.swipe        = SwipeDetector(velocity_threshold=380.0)
+        self.swipe2       = SwipeDetector(velocity_threshold=380.0)
         self.smoother     = PositionSmoother(alpha=0.38)
+        self.smoother2    = PositionSmoother(alpha=0.38)
 
         # --- Game systems ---
         self.physics   = PhysicsEngine(WIN_W, WIN_H)
@@ -134,6 +136,7 @@ class FruitNinjaGame:
         self.particles = ParticleSystem()
         self.shake     = ScreenShake()
         self.trail     = SliceTrail(max_points=24)
+        self.trail2    = SliceTrail(max_points=24)
         self.ui        = UI(WIN_W, WIN_H)
 
         # --- State ---
@@ -186,7 +189,10 @@ class FruitNinjaGame:
         self.trail.clear()
         self.shake.reset()
         self.swipe.reset()
+        self.swipe2.reset()
         self.smoother.reset()
+        self.smoother2.reset()
+        self.trail2.clear()
         self.ui.popups.clear()
 
     def _game_over(self):
@@ -203,7 +209,7 @@ class FruitNinjaGame:
         if len(self.fruits) >= MAX_SIMULTANEOUS:
             return
 
-        count = random.randint(1, 3)
+        count = random.randint(1, 4)
         for _ in range(count):
             if len(self.fruits) >= MAX_SIMULTANEOUS:
                 break
@@ -215,7 +221,7 @@ class FruitNinjaGame:
             x  = random.randint(80, WIN_W - 80)
 
             # Upward velocity — enough to reach ~60-80 % of screen height
-            vy = random.uniform(-17, -11)
+            vy = random.uniform(-35, -30)
             vx = random.uniform(-2.5, 2.5)
 
             self.fruits.append(Fruit(ftype, x, WIN_H + 60, vx, vy))
@@ -227,9 +233,9 @@ class FruitNinjaGame:
     def _update_playing(
         self,
         dt: float,
-        hand_pos,
-        is_swiping: bool,
-        velocity: tuple,
+        hands: list,
+        is_swiping_list: list,
+        velocities: list,
     ):
         now = time.monotonic()
 
@@ -272,9 +278,17 @@ class FruitNinjaGame:
         self.shake.update(dt)
         self.ui.update_popups(dt)
 
-        # Collision
-        if hand_pos and is_swiping:
-            trail_pts = self.trail.get_points()
+        # Collision — check each active hand independently
+        swipe_detectors = [self.swipe, self.swipe2]
+        trails          = [self.trail, self.trail2]
+
+        for i, (hand_pos, is_swiping, velocity) in enumerate(
+            zip(hands, is_swiping_list, velocities)
+        ):
+            if not (hand_pos and is_swiping):
+                continue
+
+            trail_pts = trails[i].get_points()
             sliced    = self.collision.check(trail_pts, self.fruits)
 
             for fruit in sliced:
@@ -309,7 +323,7 @@ class FruitNinjaGame:
                     self.ui.add_popup(fruit.x, fruit.y, pts, self.combo)
 
                     # Halves
-                    h1, h2 = fruit.slice(self.swipe.get_angle(), velocity)
+                    h1, h2 = fruit.slice(swipe_detectors[i].get_angle(), velocity)
                     self.halves.extend([h1, h2])
 
                     if self.combo >= 2:
@@ -330,7 +344,7 @@ class FruitNinjaGame:
     def _render_game_over(self):
         self.ui.draw_game_over(self.screen, self.score, self.high_score)
 
-    def _render_playing(self, hand_pos, is_swiping: bool):
+    def _render_playing(self, hands: list, is_swiping_list: list):
         ox, oy = self.shake.get_offset()
         offset  = (ox, oy)
 
@@ -356,16 +370,16 @@ class FruitNinjaGame:
         # --- Particles ---
         self.particles.draw(self.screen, offset)
 
-        # --- Sword trail ---
-        self.trail.draw(self.screen, is_swiping)
-
-        # --- Hand dot ---
-        if hand_pos:
-            px = int(hand_pos[0]) + ox
-            py = int(hand_pos[1]) + oy
-            pygame.draw.circle(self.screen, (255, 255, 255), (px, py), 9, 2)
-            if is_swiping:
-                pygame.draw.circle(self.screen, (100, 220, 255), (px, py), 15, 1)
+        # --- Sword trails and hand dots (one per hand) ---
+        trails = [self.trail, self.trail2]
+        for i, (hand_pos, is_swiping) in enumerate(zip(hands, is_swiping_list)):
+            trails[i].draw(self.screen, is_swiping)
+            if hand_pos:
+                px = int(hand_pos[0]) + ox
+                py = int(hand_pos[1]) + oy
+                pygame.draw.circle(self.screen, (255, 255, 255), (px, py), 9, 2)
+                if is_swiping:
+                    pygame.draw.circle(self.screen, (100, 220, 255), (px, py), 15, 1)
 
         # --- HUD ---
         self.ui.draw_hud(self.screen, self.score, self.lives, self.combo)
@@ -375,40 +389,51 @@ class FruitNinjaGame:
     # ------------------------------------------------------------------
 
     def _capture_frame(self):
-        """Read a frame, run hand tracking, return (cam_surface, hand_pos, velocity)."""
+        """Read a frame, run hand tracking, return (cam_surface, hands, velocities).
+
+        *hands* is a list of up to 2 smoothed (x, y) positions (or None per slot).
+        *velocities* is a matching list of (vx, vy) tuples.
+        """
         ret, frame = self.cap.read()
         if not ret:
-            return None, None, (0.0, 0.0)
+            return None, [None, None], [(0.0, 0.0), (0.0, 0.0)]
 
         # Mirror
         frame = cv2.flip(frame, 1)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # Hand tracking on native frame
-        raw_pos = self.hand_tracker.get_fingertip(frame_rgb)
+        scale_x = WIN_W / frame_rgb.shape[1]
+        scale_y = WIN_H / frame_rgb.shape[0]
 
-        hand_pos = None
-        velocity = (0.0, 0.0)
+        raw_tips = self.hand_tracker.get_all_fingertips(frame_rgb)
 
-        if raw_pos is not None:
-            # Scale to window coords
-            scale_x = WIN_W / frame_rgb.shape[1]
-            scale_y = WIN_H / frame_rgb.shape[0]
-            scaled = (raw_pos[0] * scale_x, raw_pos[1] * scale_y)
+        smoothers = [self.smoother, self.smoother2]
+        swipes    = [self.swipe,    self.swipe2]
+        trails    = [self.trail,    self.trail2]
 
-            hand_pos = self.smoother.smooth(scaled)
-            velocity = self.swipe.update(hand_pos)
-            self.trail.add_point(hand_pos, velocity)
-        else:
-            self.smoother.reset()
-            self.trail.add_point(None, (0.0, 0.0))
+        hands      = []
+        velocities = []
+
+        for i in range(2):
+            if i < len(raw_tips):
+                scaled   = (raw_tips[i][0] * scale_x, raw_tips[i][1] * scale_y)
+                pos      = smoothers[i].smooth(scaled)
+                vel      = swipes[i].update(pos)
+                trails[i].add_point(pos, vel)
+                hands.append(pos)
+                velocities.append(vel)
+            else:
+                smoothers[i].reset()
+                trails[i].add_point(None, (0.0, 0.0))
+                hands.append(None)
+                velocities.append((0.0, 0.0))
 
         # Convert to pygame surface (resize to window)
         display_frame = cv2.resize(frame_rgb, (WIN_W, WIN_H))
         cam_surf = pygame.surfarray.make_surface(
             display_frame.transpose(1, 0, 2)
         )
-        return cam_surf, hand_pos, velocity
+        return cam_surf, hands, velocities
 
     # ------------------------------------------------------------------
     # Input handling
@@ -450,16 +475,17 @@ class FruitNinjaGame:
                 break
 
             # Capture + hand tracking every frame
-            cam_surf, hand_pos, velocity = self._capture_frame()
+            cam_surf, hands, velocities = self._capture_frame()
             if cam_surf is not None:
                 self._cam_surf = cam_surf
 
-            is_swiping = self.swipe.is_swiping()
+            is_swiping  = self.swipe.is_swiping()
+            is_swiping2 = self.swipe2.is_swiping()
 
             # State machine
             if self.state == PLAYING:
-                self._update_playing(dt, hand_pos, is_swiping, velocity)
-                self._render_playing(hand_pos, is_swiping)
+                self._update_playing(dt, hands, [is_swiping, is_swiping2], velocities)
+                self._render_playing(hands, [is_swiping, is_swiping2])
             elif self.state == MENU:
                 self._render_menu()
             elif self.state == GAME_OVER:
