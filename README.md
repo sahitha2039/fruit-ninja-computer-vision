@@ -55,6 +55,7 @@ python main.py
 5. **Missing a fruit** (letting it fall off-screen) also costs a life.
 6. **3 lives** then game over.  Combos multiply your score!
 
+
 ### Controls
 
 | Key | Action |
@@ -62,6 +63,12 @@ python main.py
 | `Space` / Click | Start / restart |
 | `Esc` | Pause / return to menu |
 | `Q` | Quit |
+
+
+## Demo Video
+
+
+https://github.com/user-attachments/assets/44b1f688-bf6a-4a6c-bd8a-494cb335a687
 
 ---
 
@@ -116,7 +123,6 @@ fruit_ninja/
 
 ## Possible extensions
 
-- Dual-hand mode (track both hands)
 - Power-ups: freeze time, giant blade, double score
 - Background music that speeds up as combo grows
 - AR overlay using a projector or secondary display
