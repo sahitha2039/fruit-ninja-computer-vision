@@ -160,11 +160,11 @@ class UI:
 
     def add_popup(self, x: float, y: float, points: int, combo: int):
         if combo > 1:
-            text  = f"+{points}  ×{combo} COMBO!"
-            color = _ORANGE
+            text  = f"+{points}  x{combo}!"
+            color = (220, 130, 200)   # soft lavender-pink
         else:
             text  = f"+{points}"
-            color = _YELLOW
+            color = (180, 120, 230)   # lavender
         self.popups.append(ScorePopup(x - 30, y - 20, text, color))
 
     def update_popups(self, dt: float):
@@ -180,6 +180,49 @@ class UI:
     # HUD (in-game overlay)
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # HUD helper — frosted glass pill (matches menu/game-over card style)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _draw_hud_pill(surface: pygame.Surface,
+                       x: int, y: int, w: int, h: int,
+                       border_color=None):
+        """Frosted-glass rounded pill — opaque enough to read over webcam."""
+        if border_color is None:
+            border_color = (244, 182, 213, 180)
+        panel = pygame.Surface((w, h), pygame.SRCALPHA)
+        # Semi-opaque dark-tinted white so text pops over any webcam feed
+        pygame.draw.rect(panel, (30, 20, 45, 170),   (0, 0, w, h), border_radius=h)
+        # Coloured border
+        pygame.draw.rect(panel, border_color,          (0, 0, w, h), 2,  border_radius=h)
+        # Subtle inner top highlight for depth
+        pygame.draw.rect(panel, (255, 255, 255, 18),   (2, 2, w-4, h//3), border_radius=h)
+        surface.blit(panel, (x, y))
+
+    @staticmethod
+    def _draw_heart(surface: pygame.Surface, cx: int, cy: int,
+                    size: int, color, alpha: int = 255):
+        """Draw a filled heart shape centred at (cx, cy)."""
+        r = size // 2
+        heart = pygame.Surface((size + 4, size + 4), pygame.SRCALPHA)
+        hx, hy = (size + 4) // 2, (size + 4) // 2
+        # Two circles for the top lobes
+        pygame.draw.circle(heart, (*color, alpha), (hx - r//2, hy - r//4), r//2)
+        pygame.draw.circle(heart, (*color, alpha), (hx + r//2, hy - r//4), r//2)
+        # Triangle for the bottom point
+        pts = [
+            (hx - r, hy - r//4),
+            (hx + r, hy - r//4),
+            (hx,     hy + r//2 + 2),
+        ]
+        pygame.draw.polygon(heart, (*color, alpha), pts)
+        surface.blit(heart, (cx - (size+4)//2, cy - (size+4)//2))
+
+    # ------------------------------------------------------------------
+    # HUD (in-game overlay)
+    # ------------------------------------------------------------------
+
     def draw_hud(
         self,
         surface: pygame.Surface,
@@ -187,37 +230,65 @@ class UI:
         lives: int,
         combo: int,
     ):
-        """Draw score, lives, and combo counter."""
-        # --- Score panel (top-left) ---
-        score_text = f"{score:,}"
-        self._draw_panel(surface, 10, 10, 180, 60)
-        lbl = self._font_xs.render("SCORE", True, _CYAN)
-        surface.blit(lbl, (20, 15))
-        val = self._font_md.render(score_text, True, _WHITE)
-        surface.blit(val, (20, 32))
+        """Draw score, lives, and combo counter — no panels, just styled text."""
+        now   = time.monotonic()
+        pad_x = 20
+        pad_y = 14
 
-        # --- Lives (top-right) ---
-        hearts = _HEART * max(0, lives)
-        empty  = "○" * max(0, 3 - lives)
-        lives_text = hearts + empty
-        self._draw_panel(surface, self.width - 170, 10, 160, 60)
-        lbl2 = self._font_xs.render("LIVES", True, _RED)
-        surface.blit(lbl2, (self.width - 160, 15))
-        val2 = self._font_md.render(lives_text, True, _RED)
-        surface.blit(val2, (self.width - 160, 32))
+        def _shadow(font, text, color, x, y, ox=2, oy=2, sa=110):
+            sh = font.render(text, True, (0, 0, 0))
+            sh.set_alpha(sa)
+            surface.blit(sh, (x + ox, y + oy))
+            surface.blit(font.render(text, True, color), (x, y))
 
-        # --- Combo (centre-top, only when active) ---
+        # ── Score (top-left) ──────────────────────────────────────────
+        _shadow(self._font_xs, "SCORE", (200, 160, 240), pad_x, pad_y)
+        lbl_h = self._font_xs.get_height()
+        _shadow(self._font_lg, f"{score:,}", (240, 210, 255),
+                pad_x, pad_y + lbl_h + 1)
+
+        # ── Lives (top-right) — label + drawn hearts ──────────────────
+        heart_size = 22
+        heart_gap  = 9
+        n_hearts   = 3
+        hearts_w   = n_hearts * heart_size + (n_hearts - 1) * heart_gap
+
+        lbl_l = self._font_xs.render("LIVES", True, (255, 180, 205))
+        lbl_x = self.width - pad_x - max(hearts_w, lbl_l.get_width())
+        sh_l  = self._font_xs.render("LIVES", True, (0, 0, 0))
+        sh_l.set_alpha(110)
+        surface.blit(sh_l,  (lbl_x + 2, pad_y + 2))
+        surface.blit(lbl_l, (lbl_x, pad_y))
+
+        hearts_y  = pad_y + self._font_xs.get_height() + 6 + heart_size // 2
+        hearts_x0 = self.width - pad_x - hearts_w
+        for i in range(n_hearts):
+            hcx = hearts_x0 + i * (heart_size + heart_gap) + heart_size // 2
+            if i < lives:
+                pulse = 1.0
+                if lives == 1:
+                    pulse = 0.88 + 0.12 * math.sin(now * 6)
+                sz = int(heart_size * pulse)
+                self._draw_heart(surface, hcx, hearts_y, sz, (235, 75, 115), 250)
+            else:
+                self._draw_heart(surface, hcx, hearts_y, heart_size,
+                                 (180, 120, 140), 75)
+
+        # ── Combo (centre-top) ────────────────────────────────────────
         if combo >= 2:
-            alpha = 255
-            combo_text = f"×{combo}  COMBO!"
-            c_surf = self._font_combo.render(combo_text, True, _ORANGE)
-            c_surf.set_alpha(alpha)
-            rect = c_surf.get_rect(centerx=self.width // 2, top=16)
-            # shadow
-            sh = self._font_combo.render(combo_text, True, _BLACK)
-            sh.set_alpha(alpha)
-            surface.blit(sh, (rect.x + 2, rect.y + 2))
-            surface.blit(c_surf, rect)
+            t = min(1.0, (combo - 2) / 8)
+            text_color = (
+                int(215 + (255 - 215) * t),
+                int(130 + (175 - 130) * t),
+                int(235 + (200 - 235) * t),
+            )
+            combo_text = f"x{combo}  COMBO!"
+            c_surf = self._font_combo.render(combo_text, True, text_color)
+            c_rect = c_surf.get_rect(centerx=self.width // 2, top=pad_y)
+            sh = self._font_combo.render(combo_text, True, (0, 0, 0))
+            sh.set_alpha(100)
+            surface.blit(sh, (c_rect.x + 2, c_rect.y + 2))
+            surface.blit(c_surf, c_rect)
 
         self.draw_popups(surface)
 
